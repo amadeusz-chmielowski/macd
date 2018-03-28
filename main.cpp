@@ -146,12 +146,12 @@ void buy_sell(double** in, double** in2, int size, struct dane* out, int &z) {
 	//char = "B";
 	int j = 0;
 	for (int i = 0; i < size; i++) {
-		if ((macd[i - 1] < signal[i] < macd[i + 1])&& (macd[i]+1>=signal[i]>=macd[i]-1)) {
+		if ((macd[i - 1] < signal[i] < macd[i + 1]) && (macd[i] + 2 >= signal[i] >= macd[i] - 2)) {
 			out[j].name = "BUY";
 			out[j].index = i;
 			j++;
 		}
-		if ((macd[i - 1] > signal[i] > macd[i + 1]) && (macd[i] + 1 <= signal[i] <= macd[i] - 1)) {
+		if ((macd[i - 1] > signal[i] > macd[i + 1]) && (macd[i] + 2 <= signal[i] <= macd[i] - 2)) {
 			out[j].name = "SELL";
 			out[j].index = i;
 			j++;
@@ -160,27 +160,92 @@ void buy_sell(double** in, double** in2, int size, struct dane* out, int &z) {
 	z = j;
 }
 
-void auto_buy_sell(struct dane** in, double ** wig, int size,int z, double * out) {
+void auto_buy_sell(struct dane** in, double ** wig, int size, int z, struct dane * out, double * money1, double * shares2, double * firstMony) {
 	struct dane* buy_sell = *in;
 	double * WIG20 = *wig;
-	bool buy = false;
-	bool sell = true;
-	int j = 0;
-	string * temp = new string[z];
+	double shares = 1000.000;
+	double money = 0.0000;
+	double lastmoney = 0.00000000;
+
 	for (int i = 0; i < z; i++) {
-		if (sell && buy_sell[i].name == "SELL") {
-			sell = false;
-			buy = true;
-			temp[j] = buy_sell[i].name;
-			j++;
+		out[i].index = NULL;
+		out[i].name = "";
+	}
+	int g = 0;
+	bool found = false;
+	for (int i = 0; i < z; i++) {
+		while (buy_sell[i].name != "SELL" && !found) {
+			out[i].index = -1;
+			out[i].name = "";
+			i++;
 		}
-		if (buy && buy_sell[i].name == "BUY") {
-			sell = true;
-			buy = false;
-			temp[j] = buy_sell[i].name;
-			j++;
+
+		if (buy_sell[i].name == "SELL") {
+			found = true;
+			out[i].index = buy_sell[i].index;
+			out[i].name = buy_sell[i].name;
+			i++;
+			while (buy_sell[i].name == "SELL")
+			{
+				out[i].index = -1;
+				out[i].name = "";
+				i++;
+			}
+			i--;
+
+		}
+		else if (buy_sell[i].name == "BUY") {
+			out[i].index = buy_sell[i].index;
+			out[i].name = buy_sell[i].name;
+			i++;
+			while (buy_sell[i].name == "BUY")
+			{
+				out[i].index = -1;
+				out[i].name = "";
+				i++;
+			}
+			i--;
+		}
+
+		/*if (buy_sell[z - 1].name == "BUY") {
+			out[i].index = -1;
+			out[i].name = "";
+		}*/
+	}
+	for (int i = 0; i < z; i++) {
+		if (out[i].name == "SELL" && out[i].index != -1) {
+			money = shares * WIG20[out[i].index];
+			shares = 0.0;
+		}
+		if (out[i].name == "BUY" && out[i].index != -1) {
+			shares = WIG20[out[i].index] / money;
+			money = 0.0;
+			lastmoney = 0.0;
+			lastmoney = WIG20[out[i].index];
 		}
 	}
+
+	if (money == 0.0) {
+		*money1 = shares * lastmoney;
+	}
+	else {
+		*money1 = money;
+	}
+	
+	*shares2 = shares;
+
+	int i = 0;
+	double firstMoney = 0.0;
+	while (1) {
+		if (out[i].name == "SELL" && out[i].index != -1) {
+			firstMoney = 1000 * WIG20[out[i].index];
+			break;
+		}
+		else {
+			i++;
+		}
+	}
+	*firstMony = firstMoney;
 
 }
 
@@ -193,16 +258,19 @@ int main() {
 	double * ema11 = new double[size];
 	double * signal1 = new double[size];
 	struct  dane* oo = new dane[size];
-	double * indexes = new double[size];
+	struct dane * indexes = new dane[size];
 	double * macd;
-	int z=0;
+	int z = 0;
+	double money;
+	double shares;
+	double fstMoney;
 	loadWIG20(WIG20, size);
 	ema26(&WIG20, ema25, size);
 	ema12(&WIG20, ema11, size);
 	macd = MACD(&ema11, &ema25, size);
 	signal(&macd, signal1, size);
-	buy_sell(&signal1, &signal1, size, oo,z);
-	auto_buy_sell(&oo, &WIG20, size, z, indexes);
+	buy_sell(&signal1, &signal1, size, oo, z);
+	auto_buy_sell(&oo, &WIG20, size, z, indexes, &money, &shares, &fstMoney);
 
 
 	ofstream plik("nowy.txt");
@@ -211,14 +279,26 @@ int main() {
 	plik << "WIG20" << "\t\t" << "MACD" << "\t\t" << "EMA11" << "\t\t" << "EMA25" << "\t\t" << "SIGNAL" << endl;
 	for (int k = 0; k < size; k++) {
 		//cout <<k<<"\t"<<WIG20[k] << "\t\t" << macd[k] << "\t\t"<<ema11[k]<<"\t\t"<<ema25[k]<<"\t\t"<<signal1[k]<<endl;
-				plik << WIG20[k] << "\t\t" << macd[k] << "\t\t" << ema11[k] << "\t\t" << ema25[k] << "\t\t" << signal1[k] << endl;
+		plik << WIG20[k] << "\t\t" << macd[k] << "\t\t" << ema11[k] << "\t\t" << ema25[k] << "\t\t" << signal1[k] << endl;
 		macdf << macd[k] << endl;
 		signalf << signal1[k] << endl;
 	}
 	for (int i = 0; i < z; i++) {
 		//cout << oo[i].name << " at: " << oo[i].index << endl;
-	//	cout << indexes[i] << endl;
+		cout << indexes[i].index << "\t" << indexes[i].name << endl;
+		
 	}
+
+
+	cout << endl << endl << "Before" << endl;
+	cout << "Money ~ " << (int)fstMoney << " Shares: " << 1000 << endl;
+
+
+	cout << "After" << endl;
+	cout << "Money ~ " << (int)money << " Shares: " << shares << endl;
+	cout << "Diferences" << endl;
+	cout << "Money ~ " << -fstMoney+money << " Shares: " << -1000+shares << endl;
+
 
 
 
